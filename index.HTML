@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>115年點燈名冊查詢系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script src="db.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&display=swap');
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #f8fafc;
+        }
+        .highlight {
+            background-color: #fef08a;
+            color: #b91c1c;
+            font-weight: bold;
+            padding: 0 2px;
+            border-radius: 2px;
+        }
+        /* 卡片懸浮特效 */
+        .hover-card {
+            transition: all 0.2s ease-in-out;
+        }
+        .hover-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col text-slate-800">
+
+    <header class="bg-gradient-to-r from-sky-500 to-sky-600 text-white shadow-lg sticky top-0 z-50">
+        <div class="max-w-6xl mx-auto px-4 py-4 relative flex flex-col justify-center items-center">
+            <div class="text-center">
+                <h1 class="text-2xl md:text-3xl font-bold tracking-widest flex items-center justify-center">
+                    115年點燈名冊查詢
+                </h1>
+            </div>
+            
+            <div class="hidden md:flex flex-col absolute right-4 top-1/2 -translate-y-1/2">
+                <div id="dbStatus" class="bg-sky-900/50 px-3 py-1 rounded text-xs border border-sky-300/30 flex items-center">
+                    <div id="statusDot" class="w-2 h-2 rounded-full bg-gray-400 mr-2 animate-pulse"></div>
+                    <span id="statusText">正在連結資料庫...</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-grow max-w-5xl mx-auto px-4 py-8 w-full">
+        
+        <div class="bg-white rounded-2xl shadow-md p-6 mb-8 border-t-4 border-sky-500">
+            <div class="flex items-center mb-3 justify-center md:justify-start">
+                <svg class="w-6 h-6 text-sky-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                <label for="searchInput" class="text-xl font-bold text-gray-800">查詢名冊</label>
+            </div>
+            
+            <div class="relative">
+                <input type="text" id="searchInput" 
+                    class="w-full bg-slate-50 border-2 border-slate-200 text-gray-900 text-xl rounded-xl focus:ring-4 focus:ring-sky-100 focus:border-sky-500 block p-4 pl-12 transition-all duration-200 placeholder-gray-400" 
+                    placeholder="輸入 姓名 或 編號..." autofocus>
+                <div class="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none">
+                    <span class="text-gray-400 text-lg">🔍</span>
+                </div>
+            </div>
+            
+            <div class="mt-4 pt-3 border-t border-gray-100 flex justify-between items-center">
+                <div class="flex items-center gap-3">
+                    <h2 id="resultTitle" class="text-base font-bold text-gray-600">全部資料</h2>
+                    <span id="resultCount" class="text-sm font-bold text-sky-700 bg-sky-50 px-3 py-1 rounded-full border border-sky-100">Loading...</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="resultsGrid" class="flex flex-col gap-4">
+            </div>
+
+        <div id="messageArea" class="hidden flex flex-col items-center justify-center py-20 text-center">
+            <div class="bg-gray-100 rounded-full p-6 mb-4">
+                <span class="text-5xl">📄</span>
+            </div>
+            <h3 id="msgTitle" class="text-2xl font-bold text-gray-800 mb-2">準備就緒</h3>
+            <p id="msgDesc" class="text-gray-500">請輸入關鍵字開始查詢...</p>
+        </div>
+
+    </main>
+
+    <footer class="bg-slate-900 text-slate-400 py-8 mt-auto">
+        <div class="max-w-6xl mx-auto px-4 text-center">
+            <p class="mb-2 font-bold text-slate-200">115年 點燈報名管理系統</p>
+            <div class="text-xs space-y-1 opacity-60">
+                <p>系統架構：前端分離式設計 (HTML + JS Data)</p>
+                <p>&copy; 2026 All Rights Reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // ==========================================
+        // 系統邏輯
+        // ==========================================
+        const searchInput = document.getElementById('searchInput');
+        const resultsGrid = document.getElementById('resultsGrid');
+        const messageArea = document.getElementById('messageArea');
+        const msgTitle = document.getElementById('msgTitle');
+        const msgDesc = document.getElementById('msgDesc');
+        const resultTitle = document.getElementById('resultTitle');
+        const resultCount = document.getElementById('resultCount');
+        
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+
+        let localDB = [];
+
+        // 初始化檢查
+        window.addEventListener('DOMContentLoaded', () => {
+            if (typeof db !== 'undefined') {
+                localDB = db;
+                updateStatus(true);
+                renderResults(localDB.slice(0, 60));
+                resultTitle.textContent = "資料預覽 (前 60 筆)";
+                resultCount.textContent = `共 ${localDB.length} 戶`;
+            } else {
+                updateStatus(false);
+                showError("找不到資料庫檔案 (db.js)", "請確認 db.js 是否與網頁在同一個資料夾內。");
+            }
+        });
+
+        // 搜尋監聽
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value.trim().toLowerCase();
+            handleSearch(query);
+        });
+
+        function updateStatus(isSuccess) {
+            if (isSuccess) {
+                statusDot.classList.remove('bg-gray-400', 'bg-red-500');
+                statusDot.classList.add('bg-green-400');
+                statusText.textContent = `資料庫連線成功 (${localDB.length} 筆)`;
+            } else {
+                statusDot.classList.remove('bg-gray-400', 'bg-green-400');
+                statusDot.classList.add('bg-red-500');
+                statusText.textContent = "資料庫讀取失敗";
+            }
+        }
+
+        function handleSearch(query) {
+            if (localDB.length === 0) return;
+
+            if (!query) {
+                renderResults(localDB.slice(0, 60));
+                resultTitle.textContent = "資料預覽";
+                resultCount.textContent = `共 ${localDB.length} 戶`;
+                return;
+            }
+
+            const filtered = localDB.filter(item => {
+                const [booklet, id, head, members] = item;
+                return (id && id.includes(query)) ||
+                       (head && head.includes(query)) ||
+                       (members && members.includes(query));
+            });
+
+            renderResults(filtered, query);
+            
+            if (filtered.length > 0) {
+                resultTitle.textContent = "搜尋結果";
+                resultCount.textContent = `找到 ${filtered.length} 筆`;
+            } else {
+                resultTitle.textContent = "搜尋結果";
+                resultCount.textContent = "0 筆";
+            }
+        }
+
+        function renderResults(data, query = "") {
+            resultsGrid.innerHTML = '';
+            
+            if (data.length === 0) {
+                resultsGrid.classList.add('hidden');
+                messageArea.classList.remove('hidden');
+                
+                if (query) {
+                    msgTitle.textContent = "查無資料";
+                    msgDesc.innerHTML = `找不到包含 "<span class="text-red-600 font-bold">${query}</span>" 的資料。`;
+                }
+                return;
+            }
+
+            resultsGrid.classList.remove('hidden');
+            messageArea.classList.add('hidden');
+
+            const displayLimit = 100;
+            const displayData = data.slice(0, displayLimit);
+
+            displayData.forEach(item => {
+                const [booklet, id, head, members] = item;
+                
+                const highlight = (text) => {
+                    if (!query || !text) return text;
+                    const regex = new RegExp(`(${query})`, 'gi');
+                    return text.replace(regex, '<span class="highlight">$1</span>');
+                };
+
+                let membersHtml = '<span class="text-amber-700/40 text-sm italic">無其他成員</span>';
+                if (members) {
+                    membersHtml = members.split('、').map(m => 
+                        `<span class="inline-block bg-white text-amber-900 text-sm px-2 py-1 rounded mr-1 mb-1 border border-amber-200">${highlight(m)}</span>`
+                    ).join('');
+                }
+
+                // 左側背景色：深古銅金
+                const bookletDisplay = (booklet === '?' || !booklet) ? '?' : booklet;
+                const bookletClass = (booklet === '?' || !booklet) ? 'bg-gray-400' : 'bg-yellow-700';
+
+                const card = document.createElement('div');
+                card.className = "w-full bg-white rounded-xl shadow-sm border border-amber-200 overflow-hidden hover-card flex flex-row";
+                
+                card.innerHTML = `
+                    <div class="w-32 ${bookletClass} text-white flex flex-col items-center justify-center p-3 shrink-0">
+                        <span class="text-[10px] opacity-75 uppercase mb-0.5">冊別</span>
+                        <span class="text-2xl font-black mb-2">${bookletDisplay}</span>
+                        
+                        <div class="w-full border-t border-white/20 pt-2 text-center">
+                            <span class="text-[10px] opacity-75 block mb-0.5">編號</span>
+                            <span class="text-2xl font-bold font-mono tracking-tighter block">${highlight(id)}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="flex-grow flex flex-col">
+                        
+                        <div class="px-5 py-4 bg-amber-100 flex items-center justify-between">
+                            <div>
+                                <span class="text-xs text-amber-800/60 font-bold uppercase tracking-wider block mb-1">戶長</span>
+                                <h3 class="text-2xl font-bold text-slate-800 tracking-wide">${highlight(head)}</h3>
+                            </div>
+                        </div>
+                        
+                        <div class="px-5 py-4 bg-orange-50 border-t border-orange-100 flex-grow">
+                            <span class="text-xs text-amber-800/60 font-bold uppercase tracking-wider block mb-2">同戶成員</span>
+                            <div class="flex flex-wrap gap-1">
+                                ${membersHtml}
+                            </div>
+                        </div>
+
+                    </div>
+                `;
+                resultsGrid.appendChild(card);
+            });
+
+            if (data.length > displayLimit) {
+                const hint = document.createElement('div');
+                hint.className = "text-center py-4 text-gray-400 text-sm italic bg-gray-50 rounded-lg mt-2";
+                hint.textContent = `... 還有 ${data.length - displayLimit} 筆資料未顯示，請輸入更精確的關鍵字 ...`;
+                resultsGrid.appendChild(hint);
+            }
+        }
+
+        function showError(title, desc) {
+            resultsGrid.classList.add('hidden');
+            messageArea.classList.remove('hidden');
+            msgTitle.textContent = title;
+            msgTitle.className = "text-2xl font-bold text-red-600 mb-2";
+            msgDesc.textContent = desc;
+        }
+    </script>
+</body>
+</html>
